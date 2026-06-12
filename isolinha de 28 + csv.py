@@ -1,5 +1,4 @@
 import xarray as xr
-
 import matplotlib.pyplot as plt
 import pandas as pd
 import cartopy.crs as ccrs
@@ -47,43 +46,44 @@ else:
                      longitude=slice(dominio_lon_min, dominio_lon_max))
 
 ds_asas = ds_asas.sel(valid_time=slice(str(ano_ini), str(ano_fim)))
-z_mgp = ds_asas.z / 10.0
 
-# 3. CÁLCULO DA CLIMATOLOGIA 
+# 3. CÁLCULO DA CLIMATOLOGIA (MÉDIA ANUAL EM GEOPOTENCIAL BRUTO)
 
-print(">>> Calculando a Climatologia (1991-2020)...")
-ds_clim = z_mgp.sel(latitude=lat_caixa, longitude=lon_caixa)
+print(">>> Calculando a Climatologia Média Anual (1991-2020)...")
+ds_clim = ds_asas.z.sel(latitude=lat_caixa, longitude=lon_caixa)
 ds_clim = ds_clim.sel(valid_time=slice(str(clim_ano_ini), str(clim_ano_fim)))
 
-climatologia_mensal = ds_clim.groupby('valid_time.month').mean('valid_time')
+# Média temporal de todos os anos diretos
+climatologia_anual = ds_clim.mean('valid_time')
 
-chao_fixo_por_mes = {}
-for mes in range(1, 13):
-    chao_fixo_por_mes[mes] = float(climatologia_mensal.sel(month=mes).mean())
+# Valor único escalar (chão fixo absoluto em geopotencial bruto)
+chao_fixo_unico = float(climatologia_anual.mean())
+
+# Divisão por 9.80665 
+print("="*60)
+print(f"VALOR DO CHÃO FIXO (Referência Sun et al.): {chao_fixo_unico / 9.80665:.2f} mgp")
+print("="*60)
 
 
-# GERAR OS MAPAS DA CLIMATOLOGIA
+# GERAR O MAPA DA CLIMATOLOGIA
 
-print(">>> Gerando mapas da climatologia mensal (12 mapas)...")
-pasta_climatologia = 'figuras_climatologia_mensal'
+print(">>> Gerando mapa da climatologia anual...")
+pasta_climatologia = 'figuras_climatologia_anual'
 os.makedirs(pasta_climatologia, exist_ok=True)
 
-for mes in range(1, 13):
-    fig_c, ax_c = plt.subplots(1, 1, figsize=(10, 7), subplot_kw={'projection': ccrs.PlateCarree()})
-    ax_c.set_extent([dominio_lon_min, dominio_lon_max, dominio_lat_min, dominio_lat_max], crs=ccrs.PlateCarree())
-    ax_c.coastlines(resolution='50m', color='black', linewidth=1.0)
+fig_c, ax_c = plt.subplots(1, 1, figsize=(10, 7), subplot_kw={'projection': ccrs.PlateCarree()})
+ax_c.set_extent([dominio_lon_min, dominio_lon_max, dominio_lat_min, dominio_lat_max], crs=ccrs.PlateCarree())
+ax_c.coastlines(resolution='50m', color='black', linewidth=1.0)
 
-    mapa_clim_mes = climatologia_mensal.sel(month=mes).squeeze()
-
-    plot_c = mapa_clim_mes.plot.contourf(ax=ax_c, transform=ccrs.PlateCarree(),
+plot_c = (climatologia_anual / 9.80665).plot.contourf(ax=ax_c, transform=ccrs.PlateCarree(),
                                          levels=20, cmap='YlOrRd', add_colorbar=True,
                                          cbar_kwargs={'label': 'Geopotencial 850 hPa (mgp)', 'orientation': 'horizontal', 'pad': 0.08, 'aspect': 40})
 
-    ax_c.set_title(f'Climatologia Média ({clim_ano_ini}-{clim_ano_fim}) - Mês: {mes:02d}', fontweight='bold')
-    plt.savefig(f"{pasta_climatologia}/climatologia_mes_{mes:02d}.png", dpi=100, bbox_inches='tight')
-    plt.close('all')
+ax_c.set_title(f'Climatologia Média Anual ({clim_ano_ini}-{clim_ano_fim})', fontweight='bold')
+plt.savefig(f"{pasta_climatologia}/climatologia_anual.png", dpi=100, bbox_inches='tight')
+plt.close('all')
 
-print("    [OK] Mapas da climatologia salvos.")
+print("    [OK] Mapa da climatologia salvo.")
 
 
 # 4. PASTAS E LISTAS DOS DADOS
@@ -99,13 +99,11 @@ print(">>> Iniciando processamento dos mapas de anomalia e planilhas...")
 
 for i, t in enumerate(ds_asas.valid_time):
 
-    mapa_bruto = z_mgp.sel(valid_time=t)
-    mes_atual = int(t.dt.month)
+    mapa_bruto = ds_asas.z.sel(valid_time=t)
     data_str = str(t.values)[:10]
 
-    # Cálculo de Anomalia e Recorte
-    chao_do_mes = chao_fixo_por_mes.get(mes_atual, np.nan)
-    mapa_anomalia = mapa_bruto - chao_do_mes
+    # Subtração com os valores brutos e divisão por 9.80665
+    mapa_anomalia = (mapa_bruto - chao_fixo_unico) / 9.80665
     mapa_recorte = mapa_anomalia.sel(latitude=lat_caixa, longitude=lon_caixa)
 
     # Identificação do Núcleo
@@ -124,7 +122,6 @@ for i, t in enumerate(ds_asas.valid_time):
     if int(mascara_binaria.sum()) > 0 and not np.isnan(lat_nucleo):
         ilhas_rotuladas, num_ilhas = label(mascara_binaria.values)
         
-       
         distancias = []
         for j in range(1, num_ilhas + 1):
             coords_j = np.where(ilhas_rotuladas == j)
