@@ -1,0 +1,11 @@
+numpy
+pandas
+scipy
+matplotlib
+seaborn>=0.13
+xarray
+dask[array]
+netCDF4
+pyproj
+cartopy
+pymannkendall
